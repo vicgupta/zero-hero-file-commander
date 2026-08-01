@@ -15,8 +15,8 @@ const (
 
 // cliFlags holds every command-line flag's destination.
 type cliFlags struct {
-	left, right, theme             string
-	hidden, brief, viKeys, version bool
+	left, right, theme                     string
+	hidden, brief, viKeys, version, update bool
 }
 
 // parseFlags builds a fresh FlagSet per call (rather than using the global
@@ -32,8 +32,9 @@ func parseFlags(args []string) (*flag.FlagSet, cliFlags, error) {
 	fs.StringVar(&f.theme, "theme", "", "color theme: norton, nightowl, or opencode")
 	fs.BoolVar(&f.hidden, "hidden", false, "show hidden files")
 	fs.BoolVar(&f.brief, "brief", false, "start panels in brief (name-only) display mode")
-	fs.BoolVar(&f.viKeys, "vi-keys", false, "enable h/j/k/l/n/u/v navigation and fast search")
+	fs.BoolVar(&f.viKeys, "vi-keys", false, "enable h/j/k/l/n/u navigation and fast search")
 	fs.BoolVar(&f.version, "version", false, "print the version and exit")
+	fs.BoolVar(&f.update, "update", false, "download and install the latest release over this binary")
 	err := fs.Parse(args)
 	return fs, f, err
 }
@@ -92,6 +93,13 @@ func main() {
 	}
 	if f.version {
 		fmt.Printf("zhfc %s — %s\n", appVersion, appName)
+		return
+	}
+	if f.update {
+		if err := runUpdate(os.Stdout, appVersion); err != nil {
+			fmt.Fprintln(os.Stderr, "zhfc:", err)
+			os.Exit(1)
+		}
 		return
 	}
 

@@ -266,7 +266,10 @@ func TestHAndLNavigateLikeLeftAndRightArrows(t *testing.T) {
 	}
 }
 
-func TestVOpensTheViewerOnAFileJustLikeEnter(t *testing.T) {
+// 'v' used to be a reserved "view file" shortcut; it's been removed, so it
+// must behave like any other ordinary letter now: fast search if something
+// matches, otherwise typed into the command line.
+func TestVIsNoLongerAReservedViewShortcut(t *testing.T) {
 	m := viModelWithSubdir(t)
 	p := m.panels[m.active]
 	for i, e := range p.entries {
@@ -274,27 +277,18 @@ func TestVOpensTheViewerOnAFileJustLikeEnter(t *testing.T) {
 			p.setCursor(i)
 		}
 	}
-	m, _ = m.handleKey(key('v'))
-	if m.dlg == nil || m.dlg.kind != dlgViewer {
-		t.Fatalf("v on a file should open the viewer, got %+v", m.dlg)
-	}
-}
-
-func TestVEntersADirectoryInsteadOfViewingIt(t *testing.T) {
-	m := viModelWithSubdir(t)
-	p := m.panels[m.active]
-	for i, e := range p.entries {
-		if e.name == "sub" {
-			p.setCursor(i)
-		}
-	}
 	start := p.path
 	m, _ = m.handleKey(key('v'))
-	if p.path != filepath.Join(start, "sub") {
-		t.Fatalf("v: path = %q, want entering sub", p.path)
-	}
 	if m.dlg != nil {
-		t.Error("v on a directory should enter it, not open the viewer")
+		t.Fatalf("v should no longer open the viewer, got %+v", m.dlg)
+	}
+	if p.path != start {
+		t.Errorf("v should not change the panel path, got %q", p.path)
+	}
+	// No entry in the fixture starts with "v", so it falls through to the
+	// command line rather than being consumed by a fast search match.
+	if got := string(m.cmdline.text); got != "v" {
+		t.Errorf("command line = %q, want %q", got, "v")
 	}
 }
 

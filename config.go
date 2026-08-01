@@ -11,7 +11,7 @@ import (
 type cfg struct {
 	Brief  bool `json:"brief"`
 	Hidden bool `json:"hidden"`
-	// ViKeys enables h/j/k/l/n/u/v navigation and fast filename search while
+	// ViKeys enables h/j/k/l/n/u navigation and fast filename search while
 	// the command line is dormant.
 	ViKeys bool `json:"vi_keys"`
 	// Theme selects a palette from themeNames ("norton", "nightowl", "opencode").

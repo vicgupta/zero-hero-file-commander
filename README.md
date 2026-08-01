@@ -12,7 +12,7 @@ no runtime dependencies.
 - Multi-selection: toggle, invert, select/unselect by mask
 - Built-in text/hex viewer and `$EDITOR`/`$VISUAL` integration
 - A real shell command line that tracks the active panel's directory
-- Optional vi-style navigation (`h`/`j`/`k`/`l`/`n`/`u`/`v`) and fast filename search
+- Optional vi-style navigation (`h`/`j`/`k`/`l`/`n`/`u`) and fast filename search
 - Three built-in color themes: `norton`, `nightowl`, `opencode`
 - Cross-platform: macOS, Linux, Windows
 
@@ -44,8 +44,9 @@ Flags:
 -theme string   color theme: norton, nightowl, or opencode
 -hidden         show hidden files
 -brief          start panels in brief (name-only) display mode
--vi-keys        enable h/j/k/l/n/u/v navigation and fast search
+-vi-keys        enable h/j/k/l/n/u navigation and fast search
 -version        print the version and exit
+-update         download and install the latest release over this binary
 ```
 
 Press `F1` inside the app for the full keyboard reference.

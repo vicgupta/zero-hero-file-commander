@@ -314,11 +314,6 @@ func (m model) handlePanelKey(msg tea.KeyMsg) (model, tea.Cmd) {
 			case 'l':
 				p.enter()
 				return m, nil
-			case 'v':
-				if !p.enter() {
-					return m.openViewer()
-				}
-				return m, nil
 			case ':':
 				m.cmdFocus = true
 				return m, nil
