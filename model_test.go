@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -563,4 +564,351 @@ func TestThemeMenuSwitchesAndPersists(t *testing.T) {
 	if got.Theme != "opencode" {
 		t.Errorf("saved theme = %q, want opencode", got.Theme)
 	}
+}
+
+func TestChmodReportsSuccessCount(t *testing.T) {
+	m := testModel(t)
+	p := m.panels[m.active]
+	p.selected["one.txt"] = true
+	m, _ = m.doAction("chmod", "644")
+	if m.statusErr {
+		t.Errorf("chmod succeeded but statusErr is set: %q", m.status)
+	}
+	if !strings.Contains(m.status, "attributes changed") {
+		t.Errorf("status = %q, want an 'attributes changed' message", m.status)
+	}
+}
+
+// chmod on a name that no longer exists on disk (e.g. removed by another
+// process between selection and the F11 dialog) must be reported, not
+// silently swallowed the way the original implementation did.
+func TestChmodReportsFailureWhenATargetIsGone(t *testing.T) {
+	m := testModel(t)
+	p := m.panels[m.active]
+	p.selected["one.txt"] = true
+	p.entries = append(p.entries, entry{name: "ghost.txt"})
+	p.selected["ghost.txt"] = true
+
+	m, _ = m.doAction("chmod", "644")
+	if !m.statusErr {
+		t.Errorf("a partially failed chmod should set statusErr; status = %q", m.status)
+	}
+	if !strings.Contains(m.status, "1/2 failed") {
+		t.Errorf("status = %q, want it to report 1/2 failed", m.status)
+	}
+}
+
+func TestChmodBadModeIsRejected(t *testing.T) {
+	m := testModel(t)
+	m.panels[m.active].selected["one.txt"] = true
+	m, _ = m.doAction("chmod", "not-octal")
+	if !m.statusErr || m.status != "bad mode" {
+		t.Errorf("status = %q (err=%v), want \"bad mode\"", m.status, m.statusErr)
+	}
+}
+
+func TestCdDistinguishesPermissionFromMissing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permission semantics differ on windows")
+	}
+	m := testModel(t)
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	target := filepath.Join(locked, "target")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(locked, 0o755)
+
+	m, _ = m.runCommand("cd " + target)
+	if !m.statusErr {
+		t.Errorf("cd into an inaccessible directory should set statusErr; status = %q", m.status)
+	}
+	if strings.Contains(m.status, "no such directory") {
+		t.Errorf("a permission error should not be reported as 'no such directory': %q", m.status)
+	}
+}
+
+func TestCdReportsTrulyMissingDirectory(t *testing.T) {
+	m := testModel(t)
+	m, _ = m.runCommand("cd /this/does/not/exist")
+	if !m.statusErr || !strings.Contains(m.status, "no such directory") {
+		t.Errorf("status = %q, want a 'no such directory' error", m.status)
+	}
+}
+
+func TestF8DefaultsToYesAndDeletesOnEnter(t *testing.T) {
+	m := testModel(t)
+	dir := m.panels[m.active].path
+	m, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyF8})
+	if m.dlg == nil || m.dlg.kind != dlgConfirm || m.dlg.sel != 0 {
+		t.Fatalf("F8 should open a confirm dialog defaulting to Yes (sel=0), got %+v", m.dlg)
+	}
+	m, cmd := m.handleDlgKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.dlg != nil {
+		t.Error("dialog should close after Enter")
+	}
+	if !m.opRun {
+		t.Fatal("F8 -> Enter (default Yes) should have started the delete operation")
+	}
+	m = pump(t, m, cmd, "")
+	if _, err := os.Stat(filepath.Join(dir, "one.txt")); !os.IsNotExist(err) {
+		t.Errorf("one.txt should have been deleted, stat err = %v", err)
+	}
+}
+
+func TestCapitalDDefaultsToNoAndDoesNotDeleteOnEnter(t *testing.T) {
+	m := testModel(t)
+	p := m.panels[m.active]
+	m, _ = m.handleKey(key('D'))
+	if m.dlg == nil || m.dlg.kind != dlgConfirm || m.dlg.sel != 1 {
+		t.Fatalf("D should open a confirm dialog defaulting to No (sel=1), got %+v", m.dlg)
+	}
+	m, _ = m.handleDlgKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.dlg != nil {
+		t.Error("dialog should close after Enter")
+	}
+	if m.opRun {
+		t.Error("Enter on the No-default confirm should not start a delete")
+	}
+	if !p.has("one.txt") {
+		t.Error("file was deleted despite the default (No) being accepted")
+	}
+}
+
+func TestCapitalDCanBeConfirmedByMovingToYes(t *testing.T) {
+	m := testModel(t)
+	m, _ = m.handleKey(key('D'))
+	if m.dlg.sel != 1 {
+		t.Fatalf("setup: expected default sel=1 (No), got %d", m.dlg.sel)
+	}
+	m, _ = m.handleDlgKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if m.dlg.sel != 0 {
+		t.Fatalf("Left should toggle the selection to Yes (0), got %d", m.dlg.sel)
+	}
+	m, _ = m.handleDlgKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.opRun {
+		t.Error("confirming Yes after toggling should start the delete operation")
+	}
+}
+
+func TestCapitalDEscCancelsRegardlessOfSelection(t *testing.T) {
+	m := testModel(t)
+	m, _ = m.handleKey(key('D'))
+	m, _ = m.handleDlgKey(tea.KeyMsg{Type: tea.KeyLeft}) // move to Yes
+	m, _ = m.handleDlgKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.dlg != nil {
+		t.Error("Esc should close the dialog")
+	}
+	if m.opRun {
+		t.Error("Esc should never start the delete, even after moving to Yes")
+	}
+}
+
+// The whole point of gating on cmdEmpty: composing an ordinary command that
+// happens to contain a capital D must not be hijacked into a delete prompt.
+func TestCapitalDDoesNotHijackCommandLineTyping(t *testing.T) {
+	m := testModel(t)
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "Downloads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m.panels[m.active].path = dir
+
+	for _, r := range "cd D" {
+		m, _ = m.handleKey(key(r))
+	}
+	if m.dlg != nil {
+		t.Fatalf("capital D mid-command should not open a dialog, got %+v", m.dlg)
+	}
+	if got := string(m.cmdline.text); got != "cd D" {
+		t.Fatalf("command line = %q, want %q", got, "cd D")
+	}
+	for _, r := range "ownloads" {
+		m, _ = m.handleKey(key(r))
+	}
+	m, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.panels[m.active].path != filepath.Join(dir, "Downloads") {
+		t.Errorf("path = %q, want the command to have run normally", m.panels[m.active].path)
+	}
+}
+
+func quickViewModel(t *testing.T) model {
+	t.Helper()
+	t.Setenv("NC_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "a.txt"), "content of a")
+	write(t, filepath.Join(dir, "b.txt"), "content of b")
+	m := newModel(dir, dir, cfg{})
+	m.width, m.height = 100, 12
+	m.panels[0].setCursor(1) // first real entry after ".."
+	return m
+}
+
+func TestCapitalVTurnsOnQuickViewAndForcesLeftActive(t *testing.T) {
+	m := quickViewModel(t)
+	m.active = 1 // start on the right, to prove toggling forces it back
+	m, _ = m.handleKey(key('V'))
+	if !m.panels[1].quickView {
+		t.Fatal("V should turn on quick view on the right panel")
+	}
+	if m.active != 0 {
+		t.Errorf("active = %d, want 0 (left) after enabling quick view", m.active)
+	}
+	if !strings.Contains(m.View(), "content of a") {
+		t.Error("the right pane should render the left panel's cursor file content")
+	}
+}
+
+func TestCapitalVTogglesOff(t *testing.T) {
+	m := quickViewModel(t)
+	m, _ = m.handleKey(key('V'))
+	if !m.panels[1].quickView {
+		t.Fatal("setup: expected quick view on")
+	}
+	m, _ = m.handleKey(key('V'))
+	if m.panels[1].quickView {
+		t.Error("a second V should turn quick view back off")
+	}
+}
+
+func TestQuickViewRejectsADirectoryCursor(t *testing.T) {
+	m := quickViewModel(t)
+	m.panels[0].setCursor(0) // ".."
+	m, _ = m.handleKey(key('V'))
+	if m.panels[1].quickView {
+		t.Error("quick view should not turn on when the left cursor is on a directory")
+	}
+	if !m.statusErr {
+		t.Errorf("status = %q, want an error", m.status)
+	}
+}
+
+func TestQuickViewLiveUpdatesAsLeftCursorMoves(t *testing.T) {
+	m := quickViewModel(t)
+	m, _ = m.handleKey(key('V'))
+	if !strings.Contains(m.View(), "content of a") {
+		t.Fatal("setup: expected to see a.txt's content first")
+	}
+	m.panels[0].move(1) // to b.txt
+	view := m.View()
+	if strings.Contains(view, "content of a") {
+		t.Error("quick view should have moved on from a.txt's content")
+	}
+	if !strings.Contains(view, "content of b") {
+		t.Error("quick view should now show b.txt's content")
+	}
+}
+
+func TestTabCannotFocusAQuickViewPane(t *testing.T) {
+	m := quickViewModel(t)
+	m, _ = m.handleKey(key('V'))
+	if m.active != 0 {
+		t.Fatalf("setup: expected active=0, got %d", m.active)
+	}
+	m, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyTab})
+	if m.active != 0 {
+		t.Errorf("Tab should not switch onto a quick-view pane; active = %d", m.active)
+	}
+}
+
+func TestEscExitsQuickView(t *testing.T) {
+	m := quickViewModel(t)
+	m, _ = m.handleKey(key('V'))
+	m, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.panels[1].quickView {
+		t.Error("Esc should exit quick view")
+	}
+}
+
+func TestSwapPanelsCancelsQuickView(t *testing.T) {
+	m := quickViewModel(t)
+	m, _ = m.handleKey(key('V'))
+	if !m.panels[1].quickView {
+		t.Fatal("setup: expected quick view on")
+	}
+	m, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlU})
+	if m.panels[0].quickView || m.panels[1].quickView {
+		t.Error("swapping panels should cancel quick view on both sides")
+	}
+}
+
+// Same gating rule as capital D: composing a command that happens to contain
+// a capital V must not be hijacked.
+func TestCapitalVDoesNotHijackCommandLineTyping(t *testing.T) {
+	m := quickViewModel(t)
+	for _, r := range "git V" {
+		m, _ = m.handleKey(key(r))
+	}
+	if m.panels[1].quickView {
+		t.Error("capital V mid-command should not toggle quick view")
+	}
+	if got := string(m.cmdline.text); got != "git V" {
+		t.Errorf("command line = %q, want %q", got, "git V")
+	}
+}
+
+func TestPanelWidthsSplitEvenlyByDefault(t *testing.T) {
+	m := testModel(t)
+	l, r := m.panelWidths(101) // usable = 100
+	if l != 50 || r != 50 {
+		t.Errorf("panelWidths(101) = (%d, %d), want (50, 50)", l, r)
+	}
+}
+
+func TestPanelWidthsFavorRightDuringQuickView(t *testing.T) {
+	m := testModel(t)
+	m.panels[1].quickView = true
+	l, r := m.panelWidths(101) // usable = 100
+	if r <= l {
+		t.Errorf("panelWidths during quick view = (%d, %d), want right substantially larger", l, r)
+	}
+	if r < 60 {
+		t.Errorf("right = %d, want the previewed file to get most of the width", r)
+	}
+}
+
+// leftW+rightW must always equal width-1 (the divider column) — View()
+// relies on this rather than padding to paper over a gap.
+func TestPanelWidthsAlwaysFillTheAvailableWidth(t *testing.T) {
+	m := testModel(t)
+	for _, quickView := range []bool{false, true} {
+		m.panels[1].quickView = quickView
+		for _, w := range []int{40, 41, 60, 79, 80, 81, 120, 250} {
+			l, r := m.panelWidths(w)
+			if l+r != w-1 {
+				t.Errorf("quickView=%v panelWidths(%d) = (%d, %d), sum %d, want %d", quickView, w, l, r, l+r, w-1)
+			}
+			if l < 1 || r < 1 {
+				t.Errorf("quickView=%v panelWidths(%d) = (%d, %d), want both positive", quickView, w, l, r)
+			}
+		}
+	}
+}
+
+func TestPanelWidthsKeepsLeftLegibleAtMinimumWidth(t *testing.T) {
+	m := testModel(t)
+	m.panels[1].quickView = true
+	l, _ := m.panelWidths(40) // the app's enforced minimum
+	if l < 10 {
+		t.Errorf("left width at minimum terminal size = %d, too narrow to show filenames", l)
+	}
+}
+
+func TestQuickViewWidensTheRightPanelInTheRenderedFrame(t *testing.T) {
+	withColor(t)
+	m := quickViewModel(t)
+	beforeL, beforeR := m.panelWidths(m.width)
+	m, _ = m.handleKey(key('V'))
+	afterL, afterR := m.panelWidths(m.width)
+	if afterR <= beforeR {
+		t.Errorf("right width after V = %d, want it larger than the pre-quick-view width %d", afterR, beforeR)
+	}
+	if afterL >= beforeL {
+		t.Errorf("left width after V = %d, want it smaller than the pre-quick-view width %d", afterL, beforeL)
+	}
+	checkFrame(t, m.View(), m.width, m.height)
 }

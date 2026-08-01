@@ -45,8 +45,15 @@ func newInputDialog(title, prompt, initial, action string) *dialog {
 	return &dialog{kind: dlgInput, title: title, prompt: prompt, value: []rune(initial), vcur: len(initial), action: action}
 }
 
-func newConfirmDialog(msg, action string) *dialog {
-	return &dialog{kind: dlgConfirm, title: "Confirm", prompt: msg, action: action}
+// newConfirmDialog builds a Yes/No confirmation, highlighting Yes if
+// defaultYes is true and No otherwise, so Enter alone does the safe thing.
+func newConfirmDialog(msg, action string, defaultYes bool) *dialog {
+	sel := 1 // No
+	if defaultYes {
+		sel = 0
+	}
+	items := []menuItem{{label: "Yes"}, {label: "No"}}
+	return &dialog{kind: dlgConfirm, title: "Confirm", prompt: msg, items: items, sel: sel, action: action}
 }
 
 func newHelpDialog() *dialog {
@@ -109,7 +116,7 @@ func (d *dialog) body() ([]string, int) {
 		return helpLines, -1
 	case dlgViewer:
 		return d.viewer.lines, -1
-	case dlgMenu, dlgConflict:
+	case dlgMenu, dlgConflict, dlgConfirm:
 		out := []string{d.title, ""}
 		if d.prompt != "" {
 			out = append(out, strings.Split(d.prompt, "\n")...)
@@ -134,8 +141,6 @@ func (d *dialog) body() ([]string, int) {
 		line := append(append([]rune{}, r[:cur]...), '▌')
 		line = append(line, r[cur:]...)
 		return []string{d.title, "", "> " + string(line), "", "Enter = OK    Esc = Cancel"}, -1
-	case dlgConfirm:
-		return []string{d.title, "", d.prompt, "", "Enter = Yes    Esc = No"}, -1
 	}
 	return nil, -1
 }
@@ -272,12 +277,16 @@ func (m model) handleDlgKey(msg tea.KeyMsg) (model, tea.Cmd) {
 		}
 	case dlgConfirm:
 		switch msg.Type {
-		case tea.KeyEnter:
-			action := d.action
-			m.dlg = nil
-			return m.doAction(action, "")
+		case tea.KeyUp, tea.KeyDown, tea.KeyLeft, tea.KeyRight, tea.KeyTab, tea.KeyShiftTab:
+			d.sel = 1 - d.sel
 		case tea.KeyEsc:
 			m.dlg = nil
+		case tea.KeyEnter:
+			action, confirmed := d.action, d.sel == 0
+			m.dlg = nil
+			if confirmed {
+				return m.doAction(action, "")
+			}
 		}
 	}
 	return m, nil
@@ -435,11 +444,15 @@ var helpLines = []string{
 	"   Insert / Space toggle   Ctrl+A select all",
 	"   Ctrl+T invert           Ctrl+D clear",
 	"   F5/F6/F8 act on the selection if any, else the cursor row",
+	"   Shift+D (command line empty) delete, confirm defaults to No",
 	"",
 	" Other:",
 	"   Ctrl+R reread    Ctrl+U swap panels    Ctrl+B brief/full",
 	"   F11 change permissions (octal mode)",
 	"   F9 Commands -> Theme...  switch color scheme (norton/nightowl/opencode)",
+	"   Shift+V (command line empty) quick view: right panel shows a live",
+	"   preview of the file under the left panel's cursor. Press again, or",
+	"   Esc, to go back to a normal listing.",
 	"",
 	" Press q or Esc to close.",
 }

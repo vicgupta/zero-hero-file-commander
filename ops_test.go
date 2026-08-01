@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -416,5 +417,39 @@ func TestCheckDestDir(t *testing.T) {
 	f := write(t, filepath.Join(dir, "f.txt"), "x")
 	if err := checkDestDir(f); err == nil {
 		t.Error("file destination should be rejected")
+	}
+}
+
+func TestCheckDestDirDistinguishesPermissionFromMissing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permission semantics differ on windows")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	target := filepath.Join(locked, "target")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(locked, 0o755) // restore so TempDir cleanup can remove it
+
+	err := checkDestDir(target)
+	if err == nil {
+		t.Fatal("expected an error for an inaccessible destination")
+	}
+	if strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("a permission error should not be reported as 'does not exist': %v", err)
+	}
+	if !strings.Contains(err.Error(), "access") {
+		t.Errorf("error should mention access, got: %v", err)
+	}
+}
+
+func TestCheckDestDirReportsTrulyMissingDestination(t *testing.T) {
+	err := checkDestDir(filepath.Join(t.TempDir(), "nope"))
+	if err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("err = %v, want a 'does not exist' error", err)
 	}
 }

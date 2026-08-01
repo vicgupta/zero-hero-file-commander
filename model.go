@@ -121,6 +121,15 @@ func (m model) cmdIdle() bool {
 	return m.cfg.ViKeys && !m.cmdFocus && len(m.cmdline.text) == 0
 }
 
+// cmdEmpty is like cmdIdle but doesn't require vi-keys to be enabled — for
+// shortcuts (like capital D) that are their own opt-in-independent feature,
+// not part of the vi-navigation bundle. Gating on it still keeps typing a
+// command with that letter in it (e.g. "cd Downloads") unaffected once the
+// command line has any content or focus.
+func (m model) cmdEmpty() bool {
+	return !m.cmdFocus && len(m.cmdline.text) == 0
+}
+
 func (m model) Init() tea.Cmd { return nil }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -153,15 +162,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.panels[0].reload()
 		m.panels[1].reload()
 		if msg.err != nil {
-			m.status = "command failed: " + msg.err.Error()
+			m.status = "command failed: " + describeErr(msg.err)
+			m.statusErr = true
 		} else {
 			m.status = ""
+			m.statusErr = false
 		}
 	case editDoneMsg:
 		m.panels[0].reload()
 		m.panels[1].reload()
 		if msg.err != nil {
-			m.status = "editor failed: " + msg.err.Error()
+			m.status = "editor failed: " + describeErr(msg.err)
 			m.statusErr = true
 		}
 	}
@@ -200,6 +211,16 @@ func (m model) answerConflict(a conflictAnswer) (model, tea.Cmd) {
 	return m, m.opSub()
 }
 
+// swapPanels exchanges the left and right panels. Any active quick view is
+// cancelled first — after a swap it's no longer clear which panel it should
+// still be sourcing from or displaying into, so continuing it would mislead
+// rather than help.
+func (m *model) swapPanels() {
+	m.panels[0].quickView = false
+	m.panels[1].quickView = false
+	m.panels[0], m.panels[1] = m.panels[1], m.panels[0]
+}
+
 func (m model) quitCmd() tea.Cmd {
 	if m.opCancel != nil {
 		m.opCancel()
@@ -229,7 +250,7 @@ func (m model) handlePanelKey(msg tea.KeyMsg) (model, tea.Cmd) {
 	case tea.KeyF7:
 		m.dlg = newInputDialog("Make directory", "New directory:", "", "mkdir")
 	case tea.KeyF8:
-		return m.deleteConfirm()
+		return m.deleteConfirm(true)
 	case tea.KeyF9:
 		m.dlg = newMenuDialog("Commands", commandMenuItems())
 	case tea.KeyF10:
@@ -237,7 +258,11 @@ func (m model) handlePanelKey(msg tea.KeyMsg) (model, tea.Cmd) {
 	case tea.KeyF11:
 		m.dlg = newInputDialog("Change attributes", "Mode (octal, e.g. 644):", "644", "chmod")
 	case tea.KeyTab, tea.KeyShiftTab:
-		m.active = 1 - m.active
+		// A quick-view pane shows no cursor of its own, so it's never a valid
+		// navigation target — stay put rather than switching onto it.
+		if !m.panels[1-m.active].quickView {
+			m.active = 1 - m.active
+		}
 	case tea.KeyUp, tea.KeyShiftUp:
 		p.move(-1)
 	case tea.KeyDown, tea.KeyShiftDown:
@@ -270,6 +295,7 @@ func (m model) handlePanelKey(msg tea.KeyMsg) (model, tea.Cmd) {
 		m.cmdFocus = false
 		p.clearSel()
 		p.resetSearch()
+		m.panels[1].quickView = false
 	case tea.KeyInsert, tea.KeySpace:
 		if len(m.cmdline.text) > 0 && msg.Type == tea.KeySpace {
 			m.cmdline.insert(msg.Runes)
@@ -279,7 +305,7 @@ func (m model) handlePanelKey(msg tea.KeyMsg) (model, tea.Cmd) {
 	case tea.KeyCtrlR:
 		p.reload()
 	case tea.KeyCtrlU:
-		m.panels[0], m.panels[1] = m.panels[1], m.panels[0]
+		m.swapPanels()
 	case tea.KeyCtrlE:
 		m.cmdline.recall(1)
 	case tea.KeyCtrlA:
@@ -291,6 +317,18 @@ func (m model) handlePanelKey(msg tea.KeyMsg) (model, tea.Cmd) {
 	case tea.KeyCtrlB:
 		m.brief = !m.brief
 	case tea.KeyRunes:
+		// Capital D/V: delete-with-confirm and quick-view. Independent of
+		// vi-keys, but still only while the command line is dormant, so
+		// typing e.g. "cd Downloads" or "git Version" is never hijacked
+		// mid-command.
+		if len(msg.Runes) == 1 && m.cmdEmpty() {
+			switch msg.Runes[0] {
+			case 'D':
+				return m.deleteConfirm(false)
+			case 'V':
+				return m.toggleQuickView()
+			}
+		}
 		// vi-style navigation, but only while the command line is dormant —
 		// otherwise "cat file" and friends could never be typed. ':' hands the
 		// keyboard back to the command line so those commands stay reachable.
@@ -357,10 +395,16 @@ func (m model) runCommand(cmdStr string) (model, tea.Cmd) {
 			dir = filepath.Join(p.path, dir)
 		}
 		dir = filepath.Clean(dir)
-		if st, err := os.Stat(dir); err == nil && st.IsDir() {
-			p.setPath(dir)
-		} else {
+		st, err := os.Stat(dir)
+		switch {
+		case err != nil && os.IsPermission(err):
+			m.status = "cannot access " + dir + ": " + describeErr(err)
+			m.statusErr = true
+		case err != nil || !st.IsDir():
 			m.status = "no such directory: " + dir
+			m.statusErr = true
+		default:
+			p.setPath(dir)
 		}
 		return m, nil
 	}
@@ -420,8 +464,7 @@ func (m model) openViewer() (model, tea.Cmd) {
 	}
 	v, err := newViewer(path)
 	if err != nil {
-		m.status = "view: " + err.Error()
-		return m, nil
+		return m.fail("view: " + describeErr(err))
 	}
 	m.dlg = newViewerDialog(v)
 	return m, nil
@@ -437,8 +480,7 @@ func (m model) openEditor() (model, tea.Cmd) {
 		return m, nil
 	}
 	if e.dir {
-		m.status = "cannot edit a directory"
-		return m, nil
+		return m.fail("cannot edit a directory")
 	}
 	return m, editCmd(filepath.Join(p.path, e.name))
 }
@@ -463,14 +505,17 @@ func (m model) moveDialog() (model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) deleteConfirm() (model, tea.Cmd) {
+// deleteConfirm opens the delete confirmation. F8 defaults to Yes, matching
+// classic NC; the capital-D shortcut defaults to No, since it's easy to hit
+// by accident while typing (it's a single unmodified keystroke, not a
+// function key) and deletion isn't reversible.
+func (m model) deleteConfirm(defaultYes bool) (model, tea.Cmd) {
 	p := m.panels[m.active]
 	items := p.selectedEntries()
 	if len(items) == 0 {
-		m.status = "nothing to delete"
-		return m, nil
+		return m.fail("nothing to delete")
 	}
-	m.dlg = newConfirmDialog(fmt.Sprintf("Delete %d item(s)?", len(items)), "delete")
+	m.dlg = newConfirmDialog(fmt.Sprintf("Delete %d item(s)?", len(items)), "delete", defaultYes)
 	return m, nil
 }
 
@@ -537,7 +582,7 @@ func (m model) doAction(action, val string) (model, tea.Cmd) {
 		m.panels[0].reload()
 		m.panels[1].reload()
 	case "swap":
-		m.panels[0], m.panels[1] = m.panels[1], m.panels[0]
+		m.swapPanels()
 	case "toggle_brief":
 		m.brief = !m.brief
 	case "toggle_hidden":
@@ -574,7 +619,8 @@ func (m model) doAction(action, val string) (model, tea.Cmd) {
 			return m, nil
 		}
 		if err := os.MkdirAll(filepath.Join(p.path, name), 0o755); err != nil {
-			m.status = "mkdir: " + err.Error()
+			m.status = "mkdir: " + describeErr(err)
+			m.statusErr = true
 		} else {
 			p.reload()
 			m.status = "created " + name
@@ -584,13 +630,28 @@ func (m model) doAction(action, val string) (model, tea.Cmd) {
 	case "chmod":
 		mode, err := strconv.ParseUint(strings.TrimSpace(val), 8, 32)
 		if err != nil {
-			m.status = "bad mode"
-			return m, nil
+			return m.fail("bad mode")
 		}
-		for _, it := range p.selectedEntries() {
-			os.Chmod(filepath.Join(p.path, it.name), os.FileMode(mode))
+		items := p.selectedEntries()
+		var failed int
+		var lastErr error
+		for _, it := range items {
+			if err := os.Chmod(filepath.Join(p.path, it.name), os.FileMode(mode)); err != nil {
+				failed++
+				lastErr = err
+			}
 		}
-		m.status = "attributes changed"
+		p.reload()
+		switch {
+		case failed == 0:
+			m.status = fmt.Sprintf("attributes changed: %d item(s)", len(items))
+		case failed == len(items):
+			m.status = "chmod failed: " + describeErr(lastErr)
+			m.statusErr = true
+		default:
+			m.status = fmt.Sprintf("chmod: %d/%d failed: %s", failed, len(items), describeErr(lastErr))
+			m.statusErr = true
+		}
 	case "select_mask":
 		p.selectMask(strings.TrimSpace(val))
 	case "unselect_mask":
@@ -607,8 +668,7 @@ func (m model) doAction(action, val string) (model, tea.Cmd) {
 		fp := filepath.Join(p.path, name)
 		if _, err := os.Stat(fp); os.IsNotExist(err) {
 			if err := os.WriteFile(fp, nil, 0o644); err != nil {
-				m.status = "create: " + err.Error()
-				return m, nil
+				return m.fail("create: " + describeErr(err))
 			}
 		}
 		p.reload()
@@ -628,6 +688,66 @@ func (m model) panelRows() int {
 	return n
 }
 
+// renderSide draws panel i: its own listing normally, or — while quickView is
+// on — a live preview of the *other* panel's cursor file instead.
+func (m model) renderSide(i, w, h int) []srow {
+	p := m.panels[i]
+	if p.quickView {
+		other := m.panels[1-i]
+		var e entry
+		if len(other.entries) > 0 {
+			e = other.entries[other.cursor]
+		}
+		return renderQuickView(e, filepath.Join(other.path, e.name), w, h, m.active == i)
+	}
+	return p.render(w, h, m.active == i, m.brief)
+}
+
+// toggleQuickView flips the right panel between its normal directory listing
+// and a live preview of the file under the left panel's cursor, per spec
+// §6.2. Only the right panel is ever a quick-view target — turning it on
+// forces the left panel active, since a quick-view pane shows no cursor and
+// has nothing for navigation keys to act on.
+func (m model) toggleQuickView() (model, tea.Cmd) {
+	if m.panels[1].quickView {
+		m.panels[1].quickView = false
+		return m, nil
+	}
+	left := m.panels[0]
+	if len(left.entries) == 0 {
+		return m.fail("nothing to quick view")
+	}
+	e := left.entries[left.cursor]
+	if e.dir {
+		return m.fail("select a file, not a directory, to quick view")
+	}
+	m.panels[1].quickView = true
+	m.active = 0
+	return m, nil
+}
+
+// panelWidths returns the left/right column widths, not counting the
+// 1-column divider between them. Split is 50/50 normally; while quick view
+// is active, the right panel gets most of the width instead, so more of the
+// previewed file is visible without wrapping or truncation. leftW+rightW
+// always equals width-1, so the caller never needs padding to make up a gap.
+func (m model) panelWidths(width int) (leftW, rightW int) {
+	usable := width - 1
+	if !m.panels[1].quickView {
+		leftW = usable / 2
+		return leftW, usable - leftW
+	}
+	leftW = usable / 4
+	const leftFloor = 15 // keep enough room for filenames to stay legible
+	if leftW < leftFloor {
+		leftW = leftFloor
+	}
+	if leftW > usable {
+		leftW = usable
+	}
+	return leftW, usable - leftW
+}
+
 func (m model) View() string {
 	w, h := m.width, m.height
 	if w <= 0 || h <= 0 {
@@ -636,10 +756,10 @@ func (m model) View() string {
 	if w < 40 || h < 6 {
 		return fmt.Sprintf("terminal too small: %dx%d (minimum 40x6)", w, h)
 	}
-	pw := (w - 1) / 2
+	leftW, rightW := m.panelWidths(w)
 	ph := m.panelRows() + 1
-	left := m.panels[0].render(pw, ph, m.active == 0, m.brief)
-	right := m.panels[1].render(pw, ph, m.active == 1, m.brief)
+	left := m.renderSide(0, leftW, ph)
+	right := m.renderSide(1, rightW, ph)
 
 	rows := make([]srow, 0, h)
 	for i := 0; i < ph; i++ {

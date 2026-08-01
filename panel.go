@@ -27,6 +27,7 @@ type panel struct {
 	sortMode   string // "name" | "time"
 	hideHidden bool
 	search     string // accumulated fast-search prefix, original typed case
+	quickView  bool   // showing a live preview of the other panel's cursor file, not our own listing
 }
 
 func newPanel(path string, showHidden bool) *panel {

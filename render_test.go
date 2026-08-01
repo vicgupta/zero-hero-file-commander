@@ -85,7 +85,7 @@ func TestFrameWidthWithDialogs(t *testing.T) {
 		open func(m *model)
 	}{
 		{"mkdir", func(m *model) { m.dlg = newInputDialog("Make directory", "New directory:", "", "mkdir") }},
-		{"confirm", func(m *model) { m.dlg = newConfirmDialog("Delete 2 item(s)?", "delete") }},
+		{"confirm", func(m *model) { m.dlg = newConfirmDialog("Delete 2 item(s)?", "delete", true) }},
 		{"menu", func(m *model) { m.dlg = newMenuDialog("Commands", commandMenuItems()) }},
 		{"help", func(m *model) { m.dlg = newHelpDialog() }},
 		{"conflict", func(m *model) {
@@ -121,6 +121,19 @@ func TestFrameWidthAcrossTerminalSizes(t *testing.T) {
 		for _, h := range []int{6, 7, 24, 25, 50} {
 			m := panelFixture(t)
 			m.width, m.height = w, h
+			checkFrame(t, m.View(), w, h)
+		}
+	}
+}
+
+func TestFrameWidthWithQuickViewActive(t *testing.T) {
+	withColor(t)
+	for _, w := range []int{40, 41, 79, 80, 81, 120} {
+		for _, h := range []int{6, 7, 24, 25} {
+			m := panelFixture(t)
+			m.width, m.height = w, h
+			m.panels[0].setCursor(1) // land on a real file, not ".."
+			m.panels[1].quickView = true
 			checkFrame(t, m.View(), w, h)
 		}
 	}

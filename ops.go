@@ -302,6 +302,9 @@ func (r *runner) deletePath(path string, isDir bool) error {
 func checkDestDir(dir string) error {
 	st, err := os.Stat(dir)
 	if err != nil {
+		if os.IsPermission(err) {
+			return fmt.Errorf("cannot access destination: %s", describeErr(err))
+		}
 		return fmt.Errorf("destination does not exist: %s", dir)
 	}
 	if !st.IsDir() {
@@ -335,7 +338,7 @@ func (m model) startOp(verb string, items []entry, fn func(*runner, entry) error
 			}
 			ch <- opMsg{label: fmt.Sprintf("%s %s (%d/%d)", verb, it.name, i+1, len(items))}
 			if err := fn(r, it); err != nil {
-				label := verb + " failed: " + err.Error()
+				label := verb + " failed: " + describeErr(err)
 				if errors.Is(err, errCancelled) {
 					label = verb + " cancelled"
 				}
@@ -354,7 +357,7 @@ func (m model) startCopy(srcDir, dstDir string, items []entry) (model, tea.Cmd) 
 		return m.fail("nothing to copy")
 	}
 	if err := checkDestDir(dstDir); err != nil {
-		return m.fail("Copy: " + err.Error())
+		return m.fail("Copy: " + describeErr(err))
 	}
 	return m.startOp("Copy", items, func(r *runner, it entry) error {
 		return r.copyPath(filepath.Join(srcDir, it.name), filepath.Join(dstDir, it.name), it.dir)
@@ -366,7 +369,7 @@ func (m model) startMove(srcDir, dstDir string, items []entry) (model, tea.Cmd) 
 		return m.fail("nothing to move")
 	}
 	if err := checkDestDir(dstDir); err != nil {
-		return m.fail("Move: " + err.Error())
+		return m.fail("Move: " + describeErr(err))
 	}
 	return m.startOp("Move", items, func(r *runner, it entry) error {
 		return r.movePath(filepath.Join(srcDir, it.name), filepath.Join(dstDir, it.name), it.dir)

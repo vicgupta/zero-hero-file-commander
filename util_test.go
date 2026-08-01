@@ -1,6 +1,10 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -77,5 +81,26 @@ func TestTruncRune(t *testing.T) {
 	got := truncRune("abcdef", 3)
 	if got != "ab…" {
 		t.Errorf("truncRune = %q, want %q", got, "ab…")
+	}
+}
+
+func TestDescribeErrAddsAHintForPermissionErrorsOnDarwin(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("hint text is macOS-specific")
+	}
+	err := &fs.PathError{Op: "mkdir", Path: "/Volumes/x", Err: fs.ErrPermission}
+	got := describeErr(err)
+	if !strings.Contains(got, err.Error()) {
+		t.Errorf("describeErr should preserve the original message: %q", got)
+	}
+	if !strings.Contains(got, "System Settings") {
+		t.Errorf("describeErr should append the macOS permission hint: %q", got)
+	}
+}
+
+func TestDescribeErrLeavesNonPermissionErrorsAlone(t *testing.T) {
+	err := errors.New("some other failure")
+	if got := describeErr(err); got != "some other failure" {
+		t.Errorf("describeErr(%v) = %q, want the message unchanged", err, got)
 	}
 }

@@ -1,9 +1,25 @@
 package main
 
 import (
+	"os"
+	"runtime"
 	"strconv"
 	"strings"
 )
+
+// describeErr formats err for the status line, appending a short hint when
+// it's a permission error. On macOS, "operation not permitted" from the OS
+// often just means the terminal app hasn't been granted access to an
+// external/removable volume in System Settings — the raw error gives no clue
+// that's what happened, so callers surfacing a filesystem error should use
+// this instead of err.Error() directly.
+func describeErr(err error) string {
+	msg := err.Error()
+	if runtime.GOOS == "darwin" && os.IsPermission(err) {
+		msg += " (macOS may be blocking access — check System Settings > Privacy & Security > Files and Folders)"
+	}
+	return msg
+}
 
 // humanSize renders a byte count compactly, NC-style.
 func humanSize(n int64) string {
