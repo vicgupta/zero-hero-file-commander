@@ -10,7 +10,7 @@ import (
 
 const (
 	appName    = "Zero Hero File Commander"
-	appVersion = "0.1.0"
+	appVersion = "0.1.1"
 )
 
 // cliFlags holds every command-line flag's destination.
