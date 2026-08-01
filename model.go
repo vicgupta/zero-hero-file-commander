@@ -317,16 +317,18 @@ func (m model) handlePanelKey(msg tea.KeyMsg) (model, tea.Cmd) {
 	case tea.KeyCtrlB:
 		m.brief = !m.brief
 	case tea.KeyRunes:
-		// Capital D/V: delete-with-confirm and quick-view. Independent of
-		// vi-keys, but still only while the command line is dormant, so
-		// typing e.g. "cd Downloads" or "git Version" is never hijacked
-		// mid-command.
+		// Capital D/V/S: delete-with-confirm, quick-view, cycle sort.
+		// Independent of vi-keys, but still only while the command line is
+		// dormant, so typing e.g. "cd Downloads" or "git Version" is never
+		// hijacked mid-command.
 		if len(msg.Runes) == 1 && m.cmdEmpty() {
 			switch msg.Runes[0] {
 			case 'D':
 				return m.deleteConfirm(false)
 			case 'V':
 				return m.toggleQuickView()
+			case 'S':
+				return m.cycleSort()
 			}
 		}
 		// vi-style navigation, but only while the command line is dormant —
@@ -519,6 +521,34 @@ func (m model) deleteConfirm(defaultYes bool) (model, tea.Cmd) {
 	return m, nil
 }
 
+// cycleSort advances the active panel through Shift+S's four steps: sort by
+// name, then size, then modified date, then hide dotfiles (keeping the last
+// sort). A fifth press wraps back to name and restores the panel's
+// configured hidden-file visibility.
+func (m model) cycleSort() (model, tea.Cmd) {
+	p := m.panels[m.active]
+	p.sortStep = (p.sortStep + 1) % 4
+	var label string
+	switch p.sortStep {
+	case 0:
+		p.sortMode = "name"
+		p.hideHidden = !m.hidden
+		label = "name"
+	case 1:
+		p.sortMode = "size"
+		label = "size"
+	case 2:
+		p.sortMode = "time"
+		label = "modified date"
+	case 3:
+		p.hideHidden = true
+		label = "modified date, hidden files off"
+	}
+	p.reload()
+	m.status = "Sort by " + label
+	return m, nil
+}
+
 func userMenuItems() []menuItem {
 	return []menuItem{
 		{"Select by mask...", "select_mask"},
@@ -536,6 +566,7 @@ func commandMenuItems() []menuItem {
 		{"Toggle brief/full display", "toggle_brief"},
 		{"Toggle hidden files", "toggle_hidden"},
 		{"Sort by name", "sort_name"},
+		{"Sort by size", "sort_size"},
 		{"Sort by time", "sort_time"},
 		{"View file under cursor", "view"},
 		{"Edit file under cursor", "edit"},
@@ -593,6 +624,9 @@ func (m model) doAction(action, val string) (model, tea.Cmd) {
 		m.panels[1].reload()
 	case "sort_name":
 		p.sortMode = "name"
+		p.reload()
+	case "sort_size":
+		p.sortMode = "size"
 		p.reload()
 	case "sort_time":
 		p.sortMode = "time"

@@ -52,7 +52,7 @@ func newConfirmDialog(msg, action string, defaultYes bool) *dialog {
 	if defaultYes {
 		sel = 0
 	}
-	items := []menuItem{{label: "Yes"}, {label: "No"}}
+	items := []menuItem{{label: "Yes (y)"}, {label: "No (n)"}}
 	return &dialog{kind: dlgConfirm, title: "Confirm", prompt: msg, items: items, sel: sel, action: action}
 }
 
@@ -288,6 +288,16 @@ func (m model) handleDlgKey(msg tea.KeyMsg) (model, tea.Cmd) {
 				return m.doAction(action, "")
 			}
 		}
+		for _, r := range msg.Runes {
+			switch r {
+			case 'y', 'Y':
+				action := d.action
+				m.dlg = nil
+				return m.doAction(action, "")
+			case 'n', 'N':
+				m.dlg = nil
+			}
+		}
 	}
 	return m, nil
 }
@@ -445,6 +455,7 @@ var helpLines = []string{
 	"   Ctrl+T invert           Ctrl+D clear",
 	"   F5/F6/F8 act on the selection if any, else the cursor row",
 	"   Shift+D (command line empty) delete, confirm defaults to No",
+	"   confirmation dialogs: y = Yes, n = No",
 	"",
 	" Other:",
 	"   Ctrl+R reread    Ctrl+U swap panels    Ctrl+B brief/full",
@@ -453,6 +464,8 @@ var helpLines = []string{
 	"   Shift+V (command line empty) quick view: right panel shows a live",
 	"   preview of the file under the left panel's cursor. Press again, or",
 	"   Esc, to go back to a normal listing.",
+	"   Shift+S (command line empty) cycles the active panel: sort by name ->",
+	"   sort by size -> sort by modified date -> hide dotfiles -> back to name.",
 	"",
 	" Press q or Esc to close.",
 }

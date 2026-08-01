@@ -24,7 +24,8 @@ type panel struct {
 	cursor     int
 	scroll     int
 	selected   map[string]bool
-	sortMode   string // "name" | "time"
+	sortMode   string // "name" | "size" | "time"
+	sortStep   int    // Shift+S cycle position: 0=name 1=size 2=time 3=time+hide-dotfiles
 	hideHidden bool
 	search     string // accumulated fast-search prefix, original typed case
 	quickView  bool   // showing a live preview of the other panel's cursor file, not our own listing
@@ -111,6 +112,10 @@ func (p *panel) sort() {
 		case "time":
 			if !a.mod.Equal(b.mod) {
 				return a.mod.After(b.mod)
+			}
+		case "size":
+			if a.size != b.size {
+				return a.size > b.size
 			}
 		}
 		return naturalLess(a.name, b.name)
