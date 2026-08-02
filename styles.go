@@ -100,6 +100,21 @@ var (
 	styleDialogSel lipgloss.Style
 	styleTitle     lipgloss.Style
 	styleViewer    lipgloss.Style
+
+	// Markdown highlighting (viewer/Quick View), built from the same semantic
+	// theme fields as everything else — no theme gets its own markdown colors.
+	styleMdH1        lipgloss.Style
+	styleMdH2        lipgloss.Style
+	styleMdH3        lipgloss.Style
+	styleMdBold      lipgloss.Style
+	styleMdItalic    lipgloss.Style
+	styleMdCode      lipgloss.Style
+	styleMdCodeBlock lipgloss.Style
+	styleMdQuote     lipgloss.Style
+	styleMdBullet    lipgloss.Style
+	styleMdRule      lipgloss.Style
+	styleMdLinkText  lipgloss.Style
+	styleMdLinkURL   lipgloss.Style
 )
 
 var activeTheme = defaultTheme
@@ -144,6 +159,19 @@ func applyTheme(name string) {
 	styleDialogSel = lipgloss.NewStyle().Foreground(t.cursorFg).Background(t.cursorBg).Bold(true)
 	styleTitle = lipgloss.NewStyle().Foreground(t.cursorFg).Background(t.cursorBg).Bold(true)
 	styleViewer = lipgloss.NewStyle().Foreground(t.panelFg).Background(t.panelBg)
+
+	styleMdH1 = lipgloss.NewStyle().Foreground(t.dirFg).Background(t.panelBg).Bold(true).Underline(true)
+	styleMdH2 = lipgloss.NewStyle().Foreground(t.dirFg).Background(t.panelBg).Bold(true)
+	styleMdH3 = lipgloss.NewStyle().Foreground(t.tagFg).Background(t.panelBg).Bold(true)
+	styleMdBold = lipgloss.NewStyle().Foreground(t.panelFg).Background(t.panelBg).Bold(true)
+	styleMdItalic = lipgloss.NewStyle().Foreground(t.panelFg).Background(t.panelBg).Italic(true)
+	styleMdCode = lipgloss.NewStyle().Foreground(t.cursorFg).Background(t.cursorBg)
+	styleMdCodeBlock = lipgloss.NewStyle().Foreground(t.cursorFg).Background(t.cursorBg)
+	styleMdQuote = lipgloss.NewStyle().Foreground(t.mutedFg).Background(t.panelBg).Italic(true)
+	styleMdBullet = lipgloss.NewStyle().Foreground(t.tagFg).Background(t.panelBg).Bold(true)
+	styleMdRule = lipgloss.NewStyle().Foreground(t.idleFg).Background(t.panelBg)
+	styleMdLinkText = lipgloss.NewStyle().Foreground(t.dirFg).Background(t.panelBg).Underline(true)
+	styleMdLinkURL = lipgloss.NewStyle().Foreground(t.mutedFg).Background(t.panelBg)
 }
 
 func init() { applyTheme(defaultTheme) }

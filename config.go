@@ -30,7 +30,8 @@ func configPath() string {
 }
 
 func loadConfig() cfg {
-	c := cfg{ViKeys: true, Theme: defaultTheme}
+	// Defaults for a fresh install: hidden files off, detailed (non-brief) view.
+	c := cfg{Brief: false, Hidden: false, ViKeys: true, Theme: defaultTheme}
 	b, err := os.ReadFile(configPath())
 	if err != nil {
 		return c

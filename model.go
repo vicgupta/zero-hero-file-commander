@@ -864,9 +864,16 @@ func (m model) keybarRow(w int) srow {
 	if keybarWidth(gap) > w {
 		gap = ""
 	}
-	r := make(srow, 0, len(fkeys)*2)
+	r := make(srow, 0, len(fkeys)*2+2)
 	for _, kv := range fkeys {
 		r = append(r, span{kv.k, styleKeyNum}, span{gap + kv.l + " ", styleKeyLabel})
+	}
+	// Show the version in the bar's trailing space, right-aligned, but only
+	// if it fits with a cell of breathing room on each side.
+	ver := "zhfc " + appVersion
+	if free := w - r.width(); free >= len(ver)+2 {
+		r = append(r, span{strings.Repeat(" ", free-len(ver)-1), styleKeyLabel})
+		r = append(r, span{ver, styleKeyLabel})
 	}
 	return r.pad(w, styleKeyLabel)
 }

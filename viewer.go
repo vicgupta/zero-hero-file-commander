@@ -12,10 +12,21 @@ const maxViewBytes = 4 << 20 // 4 MiB
 
 // viewer is the F3 file viewer with text and hex modes.
 type viewer struct {
-	path  string
-	data  []byte
-	lines []string
-	hex   bool
+	path     string
+	data     []byte
+	lines    []string
+	hex      bool
+	wrap     bool
+	markdown bool
+
+	// dispRows caches the styled, wrapped rows for the (width, hex, wrap)
+	// they were built for, so scrolling (which re-renders every frame but
+	// changes none of those three) doesn't re-run markdown highlighting or
+	// word wrap on every keypress.
+	dispWidth int
+	dispHex   bool
+	dispWrap  bool
+	dispRows  []srow
 }
 
 func newViewer(path string) (*viewer, error) {
@@ -36,7 +47,7 @@ func newViewer(path string) (*viewer, error) {
 	if _, err := io.ReadFull(f, buf); err != nil && err != io.ErrUnexpectedEOF {
 		return nil, err
 	}
-	v := &viewer{path: path, data: buf}
+	v := &viewer{path: path, data: buf, markdown: isMarkdownPath(path)}
 	if looksBinary(buf) {
 		v.hex = true
 	}
@@ -62,12 +73,50 @@ func (v *viewer) toggleHex() {
 	v.render()
 }
 
+func (v *viewer) toggleWrap() {
+	v.wrap = !v.wrap
+}
+
 func (v *viewer) render() {
 	if v.hex {
 		v.lines = hexDump(v.data)
 	} else {
 		v.lines = textLines(v.data)
 	}
+	v.dispRows = nil // invalidate the row cache; the source lines changed
+}
+
+// rows returns the viewer's content as styled, display-ready rows: markdown
+// highlighted when the file looks like markdown, word-wrapped to w when wrap
+// is on. Recomputed only when width/hex/wrap actually change.
+func (v *viewer) rows(w int) []srow {
+	if v.dispRows != nil && w == v.dispWidth && v.hex == v.dispHex && v.wrap == v.dispWrap {
+		return v.dispRows
+	}
+	v.dispWidth, v.dispHex, v.dispWrap = w, v.hex, v.wrap
+
+	var base []srow
+	if !v.hex && v.markdown {
+		base = mdHighlightLines(v.lines)
+	} else {
+		base = make([]srow, len(v.lines))
+		for i, l := range v.lines {
+			base[i] = srow{{l, styleViewer}}
+		}
+	}
+
+	rows := base
+	if v.wrap && !v.hex {
+		rows = make([]srow, 0, len(base))
+		for _, row := range base {
+			rows = append(rows, wrapSrow(row, w)...)
+		}
+	}
+	if len(rows) == 0 {
+		rows = []srow{{}}
+	}
+	v.dispRows = rows
+	return rows
 }
 
 // textLines splits data into sanitized lines (no escape/control injection).

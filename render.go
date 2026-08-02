@@ -96,6 +96,52 @@ func (r srow) overlay(x int, sub srow) srow {
 	return append(out, tail...)
 }
 
+// wrapSrow breaks a styled row into multiple rows of at most w cells,
+// breaking at the last space before the limit like ordinary word wrap. A
+// word longer than w is hard-broken since there is no better option. Styling
+// is preserved exactly by cutting the original row with splitAt rather than
+// rebuilding spans from scratch.
+func wrapSrow(row srow, w int) []srow {
+	if w <= 0 {
+		w = 1
+	}
+	plain := []rune(row.plain())
+	if len(plain) <= w {
+		return []srow{row}
+	}
+	var out []srow
+	i := 0
+	for i < len(plain) {
+		end := i + w
+		if end >= len(plain) {
+			_, tail := row.splitAt(i)
+			out = append(out, tail)
+			break
+		}
+		brk := -1
+		for j := end; j > i; j-- {
+			if plain[j-1] == ' ' {
+				brk = j - 1
+				break
+			}
+		}
+		if brk == -1 {
+			brk = end
+		}
+		_, fromI := row.splitAt(i)
+		seg, _ := fromI.splitAt(brk - i)
+		out = append(out, seg)
+		i = brk
+		if i < len(plain) && plain[i] == ' ' {
+			i++
+		}
+	}
+	if len(out) == 0 {
+		out = []srow{{}}
+	}
+	return out
+}
+
 // renderRows joins rows into the final frame.
 func renderRows(rows []srow) string {
 	out := make([]string, len(rows))

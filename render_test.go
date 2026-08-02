@@ -164,6 +164,50 @@ func TestFullModeColumnsAlign(t *testing.T) {
 	}
 }
 
+func TestWrapSrowBreaksAtSpacesAndPreservesText(t *testing.T) {
+	row := srow{{"the quick brown ", styleDefault}, {"fox jumps", styleCursor}}
+	plainWant := row.plain()
+	wantNonSpace := strings.ReplaceAll(plainWant, " ", "")
+	for _, w := range []int{3, 5, 8, 12, 100} {
+		got := wrapSrow(row, w)
+		var nonSpace strings.Builder
+		for _, r := range got {
+			if rw := r.width(); rw > w {
+				t.Errorf("w=%d: row is %d cells wide, want <= %d: %q", w, rw, w, r.plain())
+			}
+			// A break either lands on a space (consumed, not reproduced) or
+			// mid-word (nothing consumed) — either way no non-space rune is
+			// ever dropped or duplicated, so this must hold regardless of
+			// where the wrapper chose to break.
+			nonSpace.WriteString(strings.ReplaceAll(r.plain(), " ", ""))
+		}
+		if nonSpace.String() != wantNonSpace {
+			t.Errorf("w=%d: non-space text = %q, want %q", w, nonSpace.String(), wantNonSpace)
+		}
+	}
+}
+
+func TestWrapSrowHardBreaksAWordLongerThanWidth(t *testing.T) {
+	row := srow{{"supercalifragilisticexpialidocious", styleDefault}}
+	got := wrapSrow(row, 10)
+	if len(got) < 2 {
+		t.Fatalf("got %d rows, want the long word split across multiple", len(got))
+	}
+	for i, r := range got {
+		if w := r.width(); w > 10 {
+			t.Errorf("row %d is %d cells wide, want <= 10", i, w)
+		}
+	}
+}
+
+func TestWrapSrowLeavesShortRowsUnchanged(t *testing.T) {
+	row := srow{{"short", styleDefault}}
+	got := wrapSrow(row, 40)
+	if len(got) != 1 || got[0].plain() != "short" {
+		t.Errorf("wrapSrow of a short row = %v, want it unchanged", got)
+	}
+}
+
 func TestSplitAndOverlayPreserveWidth(t *testing.T) {
 	base := srow{{"aaaa", styleDefault}, {"bbbb", styleCursor}, {"cccc", styleSelected}}
 	for x := 0; x <= 12; x++ {

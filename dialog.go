@@ -61,11 +61,20 @@ func newHelpDialog() *dialog {
 }
 
 func newViewerDialog(v *viewer) *dialog {
+	return &dialog{kind: dlgViewer, title: viewerTitle(v), viewer: v}
+}
+
+// viewerTitle builds the F3 viewer's title bar, tagging on the active mode
+// flags (hex, word wrap) so they're visible without opening the help screen.
+func viewerTitle(v *viewer) string {
 	title := " View: " + v.path
 	if v.hex {
 		title += "  [hex]"
 	}
-	return &dialog{kind: dlgViewer, title: title, viewer: v}
+	if v.wrap {
+		title += "  [wrap]"
+	}
+	return title
 }
 
 // conflictChoices are the answers offered when a destination already exists.
@@ -114,8 +123,6 @@ func (d *dialog) body() ([]string, int) {
 	switch d.kind {
 	case dlgHelp:
 		return helpLines, -1
-	case dlgViewer:
-		return d.viewer.lines, -1
 	case dlgMenu, dlgConflict, dlgConfirm:
 		out := []string{d.title, ""}
 		if d.prompt != "" {
@@ -181,15 +188,17 @@ func (m model) handleDlgKey(msg tea.KeyMsg) (model, tea.Cmd) {
 			case 'h', 'H':
 				if d.viewer != nil {
 					d.viewer.toggleHex()
-					d.title = " View: " + d.viewer.path
-					if d.viewer.hex {
-						d.title += "  [hex]"
-					}
+					d.title = viewerTitle(d.viewer)
+				}
+			case 'w', 'W':
+				if d.viewer != nil {
+					d.viewer.toggleWrap()
+					d.title = viewerTitle(d.viewer)
 				}
 			}
 		}
 		if d.kind == dlgViewer {
-			d.sel = clamp(d.sel, 0, len(d.viewer.lines)-1)
+			d.sel = clamp(d.sel, 0, len(d.viewer.rows(m.width-1))-1)
 		} else {
 			d.sel = clamp(d.sel, 0, len(helpLines)-1)
 		}
@@ -345,13 +354,18 @@ func clamp(v, lo, hi int) int {
 
 // dialogRows overlays the active dialog onto the base screen.
 func (m model) dialogRows(base []srow) []srow {
-	if k := m.dlg.kind; k == dlgHelp || k == dlgViewer {
+	switch m.dlg.kind {
+	case dlgHelp:
 		return m.fullScreenRows(len(base))
+	case dlgViewer:
+		return m.viewerRows(len(base))
 	}
 	return m.boxedRows(base)
 }
 
-// fullScreenRows draws the help/viewer overlay, which replaces the screen.
+// fullScreenRows draws the help overlay, which replaces the screen. Every
+// line is plain text in one style — unlike the viewer, help has no per-line
+// styling to preserve.
 func (m model) fullScreenRows(h int) []srow {
 	d := m.dlg
 	lines, _ := d.body()
@@ -363,6 +377,25 @@ func (m model) fullScreenRows(h int) []srow {
 			text = lines[n]
 		}
 		out = append(out, srow{{padRune(" "+text, m.width), styleViewer}})
+	}
+	return out
+}
+
+// viewerRows draws the F3 viewer overlay. Unlike fullScreenRows, content is
+// already-styled rows (markdown highlighting, word wrap), not flat strings.
+func (m model) viewerRows(h int) []srow {
+	d := m.dlg
+	contentW := m.width - 1 // -1 for the leading space every row is given below
+	rows := d.viewer.rows(contentW)
+	out := make([]srow, 0, h)
+	out = append(out, srow{{padRune(" "+d.title, m.width), styleTitle}})
+	for i := 1; i < h; i++ {
+		var row srow
+		if n := d.sel + i - 1; n >= 0 && n < len(rows) {
+			row = rows[n]
+		}
+		line := append(srow{{" ", styleViewer}}, row...)
+		out = append(out, line.pad(m.width, styleViewer))
 	}
 	return out
 }
@@ -456,6 +489,14 @@ var helpLines = []string{
 	"   F5/F6/F8 act on the selection if any, else the cursor row",
 	"   Shift+D (command line empty) delete, confirm defaults to No",
 	"   confirmation dialogs: y = Yes, n = No",
+	"",
+	" Viewer (F3 / Enter on a file):",
+	"   j/k/n/u or arrows/PgUp/PgDn   scroll   Home/End   top/bottom",
+	"   w   toggle word wrap          h   toggle hex dump",
+	"   q or Esc   close",
+	"   Markdown files (.md) are syntax highlighted automatically: headings,",
+	"   **bold**, *italic*, `code`, quotes, lists and links are colored from",
+	"   the active theme.",
 	"",
 	" Other:",
 	"   Ctrl+R reread    Ctrl+U swap panels    Ctrl+B brief/full",
