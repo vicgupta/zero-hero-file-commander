@@ -47,7 +47,9 @@ func newViewer(path string) (*viewer, error) {
 	if _, err := io.ReadFull(f, buf); err != nil && err != io.ErrUnexpectedEOF {
 		return nil, err
 	}
-	v := &viewer{path: path, data: buf, markdown: isMarkdownPath(path)}
+	// Word wrap defaults on for text/markdown so long lines are readable
+	// without scrolling sideways; it's simply ignored once hex mode kicks in.
+	v := &viewer{path: path, data: buf, markdown: isMarkdownPath(path), wrap: true}
 	if looksBinary(buf) {
 		v.hex = true
 	}

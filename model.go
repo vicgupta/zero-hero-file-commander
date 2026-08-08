@@ -316,6 +316,12 @@ func (m model) handlePanelKey(msg tea.KeyMsg) (model, tea.Cmd) {
 		p.clearSel()
 	case tea.KeyCtrlB:
 		m.brief = !m.brief
+	case tea.KeyCtrlL:
+		// Jump straight to the right panel with the command line focused —
+		// a one-key shortcut for "run a command against the other side"
+		// instead of Tab then ':'.
+		m.active = 1
+		m.cmdFocus = true
 	case tea.KeyRunes:
 		// Capital D/V/S: delete-with-confirm, quick-view, cycle sort.
 		// Independent of vi-keys, but still only while the command line is
@@ -521,13 +527,12 @@ func (m model) deleteConfirm(defaultYes bool) (model, tea.Cmd) {
 	return m, nil
 }
 
-// cycleSort advances the active panel through Shift+S's four steps: sort by
-// name, then size, then modified date, then hide dotfiles (keeping the last
-// sort). A fifth press wraps back to name and restores the panel's
-// configured hidden-file visibility.
+// cycleSort advances the active panel through Shift+S's five steps: sort by
+// name, then size, then modified date, then hide dotfiles, then show
+// dotfiles again (keeping the last sort). A sixth press wraps back to name.
 func (m model) cycleSort() (model, tea.Cmd) {
 	p := m.panels[m.active]
-	p.sortStep = (p.sortStep + 1) % 4
+	p.sortStep = (p.sortStep + 1) % 5
 	var label string
 	switch p.sortStep {
 	case 0:
@@ -543,6 +548,9 @@ func (m model) cycleSort() (model, tea.Cmd) {
 	case 3:
 		p.hideHidden = true
 		label = "modified date, hidden files off"
+	case 4:
+		p.hideHidden = false
+		label = "modified date, hidden files on"
 	}
 	p.reload()
 	m.status = "Sort by " + label

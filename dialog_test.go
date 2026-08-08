@@ -29,27 +29,27 @@ func TestViewerWKeyTogglesWrapAndTitleTag(t *testing.T) {
 	f := write(t, filepath.Join(dir, "long.txt"), strings.Repeat("word ", 40)+"\n")
 	m := viewerTestModel(t, f)
 
+	if !m.dlg.viewer.wrap {
+		t.Fatal("viewer should start wrapped by default for a text file")
+	}
+	if !strings.Contains(m.dlg.title, "[wrap]") {
+		t.Fatalf("title = %q, want it to contain [wrap] by default", m.dlg.title)
+	}
+
+	m, _ = m.handleDlgKey(key('w'))
 	if m.dlg.viewer.wrap {
-		t.Fatal("viewer should not start wrapped")
+		t.Error("'w' did not disable wrap")
 	}
 	if strings.Contains(m.dlg.title, "[wrap]") {
-		t.Fatalf("title has [wrap] before toggling: %q", m.dlg.title)
+		t.Errorf("title = %q, want [wrap] removed", m.dlg.title)
 	}
 
 	m, _ = m.handleDlgKey(key('w'))
 	if !m.dlg.viewer.wrap {
-		t.Error("'w' did not enable wrap")
+		t.Error("second 'w' did not re-enable wrap")
 	}
 	if !strings.Contains(m.dlg.title, "[wrap]") {
 		t.Errorf("title = %q, want it to contain [wrap]", m.dlg.title)
-	}
-
-	m, _ = m.handleDlgKey(key('w'))
-	if m.dlg.viewer.wrap {
-		t.Error("second 'w' did not disable wrap")
-	}
-	if strings.Contains(m.dlg.title, "[wrap]") {
-		t.Errorf("title = %q, want [wrap] removed", m.dlg.title)
 	}
 }
 
@@ -59,13 +59,15 @@ func TestViewerHKeyStillTogglesHexAlongsideWrap(t *testing.T) {
 	f := write(t, filepath.Join(dir, "a.txt"), "hello\n")
 	m := viewerTestModel(t, f)
 
-	m, _ = m.handleDlgKey(key('w'))
+	if !m.dlg.viewer.wrap {
+		t.Fatal("setup: viewer should start wrapped by default")
+	}
 	m, _ = m.handleDlgKey(key('h'))
 	if !m.dlg.viewer.hex {
 		t.Error("'h' did not enable hex mode")
 	}
 	if !m.dlg.viewer.wrap {
-		t.Error("toggling hex should not clear a previously enabled wrap")
+		t.Error("toggling hex should not clear the default wrap setting")
 	}
 	if !strings.Contains(m.dlg.title, "[hex]") || !strings.Contains(m.dlg.title, "[wrap]") {
 		t.Errorf("title = %q, want both [hex] and [wrap]", m.dlg.title)
@@ -77,12 +79,39 @@ func TestViewerScrollClampsToWrappedRowCount(t *testing.T) {
 	dir := t.TempDir()
 	f := write(t, filepath.Join(dir, "long.txt"), strings.Repeat("word ", 200)+"\n")
 	m := viewerTestModel(t, f)
-	m, _ = m.handleDlgKey(key('w'))
+	if !m.dlg.viewer.wrap {
+		t.Fatal("setup: viewer should start wrapped by default")
+	}
 
 	m, _ = m.handleDlgKey(tea.KeyMsg{Type: tea.KeyEnd})
 	want := len(m.dlg.viewer.rows(m.width-1)) - 1
 	if m.dlg.sel != want {
 		t.Errorf("after End, sel = %d, want %d (last wrapped row)", m.dlg.sel, want)
+	}
+}
+
+func TestViewerEnterClosesLikeEsc(t *testing.T) {
+	dir := t.TempDir()
+	f := write(t, filepath.Join(dir, "a.txt"), "hello\n")
+	m := viewerTestModel(t, f)
+	if m.dlg == nil {
+		t.Fatal("setup: viewer dialog should be open")
+	}
+	m, _ = m.handleDlgKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.dlg != nil {
+		t.Error("Enter should close the viewer, same as Esc")
+	}
+}
+
+func TestHelpDialogEnterCloses(t *testing.T) {
+	t.Setenv("NC_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	m := newModel(dir, dir, cfg{})
+	m.width, m.height = 80, 24
+	m.dlg = newHelpDialog()
+	m, _ = m.handleDlgKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.dlg != nil {
+		t.Error("Enter should close the help screen, same as Esc")
 	}
 }
 
@@ -92,9 +121,11 @@ func TestViewerFrameWidthWithWrapAndMarkdown(t *testing.T) {
 	f := write(t, filepath.Join(dir, "r.md"), "# "+strings.Repeat("word ", 30)+"\nplain **bold** text\n")
 	for _, w := range []int{40, 41, 79, 80, 120} {
 		for _, h := range []int{6, 24} {
-			m := viewerTestModel(t, f)
+			m := viewerTestModel(t, f) // wrapped by default
 			m.width, m.height = w, h
-			m, _ = m.handleDlgKey(key('w'))
+			checkFrame(t, m.View(), w, h)
+
+			m, _ = m.handleDlgKey(key('w')) // and with wrap toggled off
 			checkFrame(t, m.View(), w, h)
 		}
 	}

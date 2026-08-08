@@ -48,6 +48,67 @@ func TestF10Quits(t *testing.T) {
 	}
 }
 
+func TestCtrlLJumpsToRightPanelWithCommandLineFocused(t *testing.T) {
+	m := testModel(t)
+	if m.active != 0 {
+		t.Fatalf("setup: expected left panel active, got %d", m.active)
+	}
+	m, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+	if m.active != 1 {
+		t.Errorf("active panel = %d, want 1 (right)", m.active)
+	}
+	if !m.cmdFocus {
+		t.Error("Ctrl+L should focus the command line")
+	}
+}
+
+func TestCapitalSCyclesSortAndHiddenFiles(t *testing.T) {
+	t.Setenv("NC_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "one.txt"))
+	mustWrite(t, filepath.Join(dir, ".hidden"))
+	m := newModel(dir, dir, cfg{}) // cfg{}.Hidden == false: dotfiles off by default
+	m.width, m.height = 100, 30
+	p := m.panels[m.active]
+
+	hasHidden := func() bool {
+		for _, e := range p.entries {
+			if e.name == ".hidden" {
+				return true
+			}
+		}
+		return false
+	}
+
+	if p.sortMode != "name" || hasHidden() {
+		t.Fatalf("setup: expected name sort with dotfiles hidden, got sortMode=%q hasHidden=%v", p.sortMode, hasHidden())
+	}
+
+	m, _ = m.handleKey(key('S')) // -> size
+	if p.sortMode != "size" {
+		t.Errorf("step 1: sortMode = %q, want size", p.sortMode)
+	}
+	m, _ = m.handleKey(key('S')) // -> time
+	if p.sortMode != "time" {
+		t.Errorf("step 2: sortMode = %q, want time", p.sortMode)
+	}
+	m, _ = m.handleKey(key('S')) // -> hide dotfiles
+	if hasHidden() {
+		t.Error("step 3: dotfiles should be hidden")
+	}
+	m, _ = m.handleKey(key('S')) // -> show dotfiles
+	if !hasHidden() {
+		t.Error("step 4: dotfiles should be shown")
+	}
+	m, _ = m.handleKey(key('S')) // -> back to name, dotfiles restored to config default (off)
+	if p.sortMode != "name" {
+		t.Errorf("step 5 (wrap): sortMode = %q, want name", p.sortMode)
+	}
+	if hasHidden() {
+		t.Error("step 5 (wrap): dotfiles should be hidden again (restored to config default)")
+	}
+}
+
 func TestF7OpensMkdirDialog(t *testing.T) {
 	m := testModel(t)
 	m, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyF7})

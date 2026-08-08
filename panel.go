@@ -25,7 +25,7 @@ type panel struct {
 	scroll     int
 	selected   map[string]bool
 	sortMode   string // "name" | "size" | "time"
-	sortStep   int    // Shift+S cycle position: 0=name 1=size 2=time 3=time+hide-dotfiles
+	sortStep   int    // Shift+S cycle position: 0=name 1=size 2=time 3=time+hide-dotfiles 4=time+show-dotfiles
 	hideHidden bool
 	search     string // accumulated fast-search prefix, original typed case
 	quickView  bool   // showing a live preview of the other panel's cursor file, not our own listing

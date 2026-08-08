@@ -36,19 +36,22 @@ func TestViewerToggleWrapReflowsLongLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	unwrapped := v.rows(20)
-	if len(unwrapped) != len(v.lines) {
-		t.Fatalf("unwrapped row count = %d, want %d (one per source line)", len(unwrapped), len(v.lines))
+	if !v.wrap {
+		t.Fatal("word wrap should default on for a text file")
 	}
-	v.toggleWrap()
 	wrapped := v.rows(20)
-	if len(wrapped) <= len(unwrapped) {
-		t.Errorf("wrapping a long line did not increase row count: %d -> %d", len(unwrapped), len(wrapped))
+	if len(wrapped) <= len(v.lines) {
+		t.Fatalf("wrapped row count = %d, want more than %d (one long line split across rows)", len(wrapped), len(v.lines))
 	}
 	for i, row := range wrapped {
 		if got := row.width(); got > 20 {
 			t.Errorf("wrapped row %d is %d cells wide, want <= 20: %q", i, got, row.plain())
 		}
+	}
+	v.toggleWrap()
+	unwrapped := v.rows(20)
+	if len(unwrapped) != len(v.lines) {
+		t.Errorf("unwrapped row count = %d, want %d (one per source line)", len(unwrapped), len(v.lines))
 	}
 }
 

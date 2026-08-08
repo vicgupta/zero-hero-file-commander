@@ -158,7 +158,7 @@ func (m model) handleDlgKey(msg tea.KeyMsg) (model, tea.Cmd) {
 	switch d.kind {
 	case dlgViewer, dlgHelp:
 		switch msg.Type {
-		case tea.KeyEsc, tea.KeyF3:
+		case tea.KeyEsc, tea.KeyF3, tea.KeyEnter:
 			m.dlg = nil
 		case tea.KeyUp:
 			d.sel--
@@ -492,21 +492,23 @@ var helpLines = []string{
 	"",
 	" Viewer (F3 / Enter on a file):",
 	"   j/k/n/u or arrows/PgUp/PgDn   scroll   Home/End   top/bottom",
-	"   w   toggle word wrap          h   toggle hex dump",
-	"   q or Esc   close",
+	"   w   toggle word wrap (on by default)   h   toggle hex dump",
+	"   q, Esc, or Enter   close",
 	"   Markdown files (.md) are syntax highlighted automatically: headings,",
 	"   **bold**, *italic*, `code`, quotes, lists and links are colored from",
 	"   the active theme.",
 	"",
 	" Other:",
 	"   Ctrl+R reread    Ctrl+U swap panels    Ctrl+B brief/full",
+	"   Ctrl+L jump to the right panel with the command line focused",
 	"   F11 change permissions (octal mode)",
 	"   F9 Commands -> Theme...  switch color scheme (norton/nightowl/opencode)",
 	"   Shift+V (command line empty) quick view: right panel shows a live",
 	"   preview of the file under the left panel's cursor. Press again, or",
 	"   Esc, to go back to a normal listing.",
 	"   Shift+S (command line empty) cycles the active panel: sort by name ->",
-	"   sort by size -> sort by modified date -> hide dotfiles -> back to name.",
+	"   sort by size -> sort by modified date -> hide dotfiles -> show dotfiles",
+	"   -> back to name.",
 	"",
 	" Press q or Esc to close.",
 }
